@@ -50,7 +50,8 @@ LOG_LEVEL=$log_level
 EOF
 
 # ----------- 4. 生成 docker-compose.yml（强制覆盖） -----------
-cat > docker-compose.yml <<'EOF'
+# ----------- 生成 docker-compose.yml（强制覆盖，变量已展开） -----------
+cat > docker-compose.yml <<EOF
 version: '3.8'
 services:
   gpg-encryptor:
@@ -63,14 +64,13 @@ services:
       - ./gpg-keys:/app/gpg-keys:rw
       - ./logs:/app/logs:rw
     environment:
-      - GPG_RECIPIENT=${GPG_RECIPIENT}
+      - GPG_RECIPIENT=${gpg_recipient}
       - INPUT_DIR=/input
       - OUTPUT_DIR=/output
       - DELETE_AFTER_ENCRYPT=true
       - POLL_INTERVAL=5
-      - LOG_LEVEL=${LOG_LEVEL}
+      - LOG_LEVEL=${log_level}
 EOF
-
 # ----------- 5. 可选 GPG 密钥导出 -----------
 if command -v gpg &>/dev/null; then
     mapfile -t keys < <(gpg --list-secret-keys --with-colons 2>/dev/null | awk -F: '$1=="sec"{print $5}')
