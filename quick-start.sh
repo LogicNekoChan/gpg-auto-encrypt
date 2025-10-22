@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -eu
 
-# ----------- 兼容 docker-compose / docker compose -----------
+# ----------- 同时兼容 docker-compose / docker compose -----------
 compose_cmd(){
     if docker compose version &>/dev/null; then
         echo "docker compose"
@@ -49,13 +49,35 @@ POLL_INTERVAL=5
 LOG_LEVEL=$log_level
 EOF
 
-# ----------- 4. 提前创建 gpg-keys 并设置属主与权限 -----------
+# ----------- 4. 创建 gpg-keys 并强制设为容器用户(1000:1000) -----------
 mkdir -p gpg-keys
-# 容器内用户默认 1000:1000，如不同请 docker exec id 查看后修改
+# 如果容器内 UID/GID 不是 1000，请改为实际值
 sudo chown -R 1000:1000 ./gpg-keys
 chmod 700 ./gpg-keys
 
-# ----------- 5. 生成 docker-compose.yml（变量已展开） -----------
+# ----------- 5. 可选 GPG 密钥导出（确保文件属主也是 1000） -----------
+if command -v gpg &>/dev/null; then
+    mapfile -t keys < <(gpg --list-secret-keys --with-colons 2>/dev/null | awk -F: '$1=="sec"{print $5}')
+    if [[ ${#keys[@]} -gt 0 ]]; then
+        echo "Found local GPG secret keys:"
+        for i in "${!keys[@]}"; do
+            echo "  $((i+1))) ${keys[i]}"
+        done
+        read -rp "Select key number to export (1-${#keys[@]}): " idx
+        key_id="${keys[$((idx-1))]}"
+        gpg --armor --export "$key_id"       > gpg-keys/public.key
+        gpg --armor --export-secret-keys "$key_id" > gpg-keys/private.key
+        sudo chown 1000:1000 gpg-keys/*.key
+        chmod 600 gpg-keys/*.key
+        echo "Keys exported to gpg-keys/"
+    else
+        echo "No local GPG keys found; place *.key files into gpg-keys/ manually"
+    fi
+else
+    echo "GPG not installed; place *.key files into gpg-keys/ manually"
+fi
+
+# ----------- 6. 生成 docker-compose.yml（变量已展开） -----------
 cat > docker-compose.yml <<EOF
 version: '3.8'
 services:
@@ -76,27 +98,6 @@ services:
       - POLL_INTERVAL=5
       - LOG_LEVEL=${log_level}
 EOF
-
-# ----------- 6. 可选 GPG 密钥导出 -----------
-if command -v gpg &>/dev/null; then
-    mapfile -t keys < <(gpg --list-secret-keys --with-colons 2>/dev/null | awk -F: '$1=="sec"{print $5}')
-    if [[ ${#keys[@]} -gt 0 ]]; then
-        echo "Found local GPG secret keys:"
-        for i in "${!keys[@]}"; do
-            echo "  $((i+1))) ${keys[i]}"
-        done
-        read -rp "Select key number to export (1-${#keys[@]}): " idx
-        key_id="${keys[$((idx-1))]}"
-        gpg --armor --export "$key_id"       > gpg-keys/public.key
-        gpg --armor --export-secret-keys "$key_id" > gpg-keys/private.key
-        chmod 600 gpg-keys/*.key
-        echo "Keys exported to gpg-keys/"
-    else
-        echo "No local GPG keys found; place *.key files into gpg-keys/ manually"
-    fi
-else
-    echo "GPG not installed; place *.key files into gpg-keys/ manually"
-fi
 
 # ----------- 7. 启动服务 -----------
 echo "Starting container..."
