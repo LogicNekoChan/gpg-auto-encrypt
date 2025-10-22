@@ -48,11 +48,35 @@ services:
       - ${host_output}:/output
 EOF
 
-# ----------- 可选导入公钥 -----------
-echo "📎 如需导入公钥，请把 *.key 文件放到 $(pwd)/gpg-keys/ 目录下，然后按回车继续..."
-read -rp "（若无公钥可直接回车）"
+# ----------- 本机 GPG 密钥检测与选择 -----------
+echo "🔍 检测本机 GPG 密钥..."
+if ! command -v gpg &>/dev/null; then
+    echo "⚠️  本机未安装 GPG，跳过密钥选择；请手动把 *.key 文件放进 $(pwd)/gpg-keys/"
+else
+    mapfile -t keys < <(gpg --list-secret-keys --with-colons 2>/dev/null | awk -F: '$1=="sec"{print $5}')
+    if [[ ${#keys[@]} -eq 0 ]]; then
+        echo "⚠️  本机未发现 GPG 私钥，请手动把 *.key 文件放进 $(pwd)/gpg-keys/"
+    else
+        echo "发现以下私钥（公钥同步列出）："
+        for i in "${!keys[@]}"; do
+            echo "  $((i+1))) ${keys[i]}"
+        done
+        read -rp "请选择要导出的密钥编号（1-${#keys[@]}）：" idx
+        key_id="${keys[$((idx-1))]}"
+        echo "正在导出密钥到 $(pwd)/gpg-keys/ ..."
+        mkdir -p gpg-keys
+        gpg --armor --export "$key_id" > gpg-keys/public.key
+        gpg --armor --export-secret-keys "$key_id" > gpg-keys/private.key
+        chmod 600 gpg-keys/*.key
+        echo "✅ 密钥已导出至 $(pwd)/gpg-keys/"
+    fi
+fi
 
-# ----------- 启动 -----------
+# ----------- 可选补充导入提示 -----------
+echo "📎 如需补充或替换密钥，请把 *.key 文件放进 $(pwd)/gpg-keys/ 目录，然后按回车继续..."
+read -rp "（无操作可直接回车）"
+
+# ----------- 启动服务 -----------
 echo "🚀 构建并启动容器..."
 docker-compose up -d --build
 
