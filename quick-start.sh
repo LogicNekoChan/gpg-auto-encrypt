@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 set -e
 
+# ----------- 同时兼容 docker-compose / docker compose -----------
+compose_cmd(){
+    if docker compose version &>/dev/null; then
+        echo "docker compose"
+    elif command -v docker-compose &>/dev/null; then
+        echo "docker-compose"
+    else
+        echo "❌ 未安装 docker-compose 插件，也没有独立二进制" >&2
+        exit 1
+    fi
+}
+COMPOSE=$(compose_cmd)
+
 REPO="https://github.com/LogicNekoChan/gpg-auto-encrypt.git"
 DIR="gpg-auto-encrypt"
 
@@ -78,9 +91,9 @@ read -rp "（无操作可直接回车）"
 
 # ----------- 启动服务 -----------
 echo "🚀 构建并启动容器..."
-docker compose up -d --build
+$COMPOSE up -d --build
 
 echo "✅ 服务已后台启动！"
 echo "宿主机输入目录 : $host_input"
 echo "宿主机输出目录 : $host_output"
-echo "查看日志       : docker-compose logs -f"
+echo "查看日志       : $COMPOSE logs -f"
