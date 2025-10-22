@@ -1,33 +1,46 @@
 #!/usr/bin/env bash
-set -e
+set -eu
 
-# ----------- 兼容 docker-compose / docker compose -----------
+# ----------- 同时兼容 docker-compose / docker compose -----------
 compose_cmd(){
     if docker compose version &>/dev/null; then
         echo "docker compose"
     elif command -v docker-compose &>/dev/null; then
         echo "docker-compose"
     else
-        echo "❌ 未安装 docker-compose 插件，也没有独立二进制" >&2
+        echo "ERROR: docker-compose plugin or standalone binary not found" >&2
         exit 1
     fi
 }
 COMPOSE=$(compose_cmd)
 
-# ----------- 交互输入 -----------
-read -rp "🔑 GPG 收件人邮箱（GPG_RECIPIENT）: " gpg_recipient
-read -rp "🗂️ 日志级别（INFO/DEBUG）[INFO] : " log_level
+REPO="https://github.com/LogicNekoChan/gpg-auto-encrypt.git"
+PROJ_DIR="gpg-auto-encrypt"
+
+# ----------- 1. 拉取/更新代码 -----------
+if [[ -d "$PROJ_DIR/.git" ]]; then
+    echo "Pulling latest code..."
+    git -C "$PROJ_DIR" pull --ff-only
+else
+    echo "Cloning project..."
+    git clone --depth 1 "$REPO" "$PROJ_DIR" || { echo "Git clone failed"; exit 1; }
+fi
+cd "$PROJ_DIR" || { echo "Project dir not found"; exit 1; }
+
+# ----------- 2. 交互输入 -----------
+read -rp "GPG recipient email: " gpg_recipient
+read -rp "Log level (INFO/DEBUG) [INFO]: " log_level
 log_level=${log_level:-INFO}
 
-read -rp "📂 宿主机输入目录（/input 映射）[/data/gpg-input] : " host_input
+read -rp "Host input dir [/data/gpg-input]: " host_input
 host_input=${host_input:-/data/gpg-input}
-read -rp "📂 宿主机输出目录（/output 映射）[/data/gpg-output] : " host_output
+read -rp "Host output dir [/data/gpg-output]: " host_output
 host_output=${host_output:-/data/gpg-output}
 
 mkdir -p "$host_input" "$host_output"
 
-# ----------- 生成 .env -----------
-cat > .env <<EOF
+# ----------- 3. 生成 .env -----------
+cat > .env <<'EOF'
 GPG_RECIPIENT=$gpg_recipient
 INPUT_DIR=/input
 OUTPUT_DIR=/output
@@ -36,8 +49,8 @@ POLL_INTERVAL=5
 LOG_LEVEL=$log_level
 EOF
 
-# ----------- 生成 docker-compose.yml（强制覆盖） -----------
-cat > docker-compose.yml <<EOF
+# ----------- 4. 生成 docker-compose.yml（强制覆盖） -----------
+cat > docker-compose.yml <<'EOF'
 version: '3.8'
 services:
   gpg-encryptor:
@@ -50,42 +63,41 @@ services:
       - ./gpg-keys:/app/gpg-keys:rw
       - ./logs:/app/logs:rw
     environment:
-      - GPG_RECIPIENT=\${GPG_RECIPIENT}
+      - GPG_RECIPIENT=${GPG_RECIPIENT}
       - INPUT_DIR=/input
       - OUTPUT_DIR=/output
       - DELETE_AFTER_ENCRYPT=true
       - POLL_INTERVAL=5
-      - LOG_LEVEL=\${LOG_LEVEL}
+      - LOG_LEVEL=${LOG_LEVEL}
 EOF
 
-# ----------- 本机 GPG 密钥检测与导出 -----------
-echo "🔍 检测本机 GPG 密钥..."
+# ----------- 5. 可选 GPG 密钥导出 -----------
 if command -v gpg &>/dev/null; then
     mapfile -t keys < <(gpg --list-secret-keys --with-colons 2>/dev/null | awk -F: '$1=="sec"{print $5}')
     if [[ ${#keys[@]} -gt 0 ]]; then
-        echo "发现以下私钥（公钥同步导出）："
+        echo "Found local GPG secret keys:"
         for i in "${!keys[@]}"; do
             echo "  $((i+1))) ${keys[i]}"
         done
-        read -rp "请选择要导出的密钥编号（1-${#keys[@]}）: " idx
+        read -rp "Select key number to export (1-${#keys[@]}): " idx
         key_id="${keys[$((idx-1))]}"
         mkdir -p gpg-keys
         gpg --armor --export "$key_id"       > gpg-keys/public.key
         gpg --armor --export-secret-keys "$key_id" > gpg-keys/private.key
         chmod 600 gpg-keys/*.key
-        echo "✅ 密钥已导出至 gpg-keys/"
+        echo "Keys exported to gpg-keys/"
     else
-        echo "⚠️  本机无 GPG 密钥，请手动将 *.key 文件放入 gpg-keys/ 目录"
+        echo "No local GPG keys found; place *.key files into gpg-keys/ manually"
     fi
 else
-    echo "⚠️  本机未安装 GPG，请手动将 *.key 文件放入 gpg-keys/ 目录"
+    echo "GPG not installed; place *.key files into gpg-keys/ manually"
 fi
 
-# ----------- 启动服务 -----------
-echo "🚀 启动容器..."
+# ----------- 6. 启动服务 -----------
+echo "Starting container..."
 $COMPOSE up -d --build
 
-echo "✅ 服务已在后台运行！"
-echo "宿主机输入目录 : $host_input"
-echo "宿主机输出目录 : $host_output"
-echo "查看日志       : $COMPOSE logs -f"
+echo "Done!"
+echo "Input : $host_input"
+echo "Output: $host_output"
+echo "Logs  : $COMPOSE logs -f"
