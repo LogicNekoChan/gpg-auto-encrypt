@@ -77,7 +77,8 @@ sudo chown -R 1000:1000 ./logs
 chmod 755 ./logs
 
 # ----------- 6. 生成 docker-compose.yml（变量已展开） -----------
-cat > docker-compose.yml <<EOF
+# ----------- 生成 docker-compose.yml（强制覆盖，变量已展开） -----------
+cat > docker-compose.yml <<-"EOF"
 version: '3.8'
 services:
   gpg-encryptor:
