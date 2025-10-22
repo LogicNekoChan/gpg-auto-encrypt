@@ -71,7 +71,12 @@ POLL_INTERVAL=5
 LOG_LEVEL=$log_level
 EOF
 
-# ----------- 5. 生成 docker-compose.yml（变量已展开） -----------
+# ----------- 5. 修正日志目录属主（与容器内用户一致） -----------
+mkdir -p logs
+sudo chown -R 1000:1000 ./logs
+chmod 755 ./logs
+
+# ----------- 6. 生成 docker-compose.yml（变量已展开） -----------
 cat > docker-compose.yml <<EOF
 version: '3.8'
 services:
@@ -93,7 +98,7 @@ services:
       - LOG_LEVEL=${log_level}
 EOF
 
-# ----------- 6. 启动服务 -----------
+# ----------- 7. 启动服务 -----------
 echo "Starting container..."
 $COMPOSE up -d --build
 
