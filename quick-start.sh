@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -eu
 
-# ----------- 同时兼容 docker-compose / docker compose -----------
+# ----------- 兼容 docker-compose / docker compose -----------
 compose_cmd(){
     if docker compose version &>/dev/null; then
         echo "docker compose"
@@ -40,7 +40,7 @@ host_output=${host_output:-/data/gpg-output}
 mkdir -p "$host_input" "$host_output"
 
 # ----------- 3. 生成 .env -----------
-cat > .env <<'EOF'
+cat > .env <<EOF
 GPG_RECIPIENT=$gpg_recipient
 INPUT_DIR=/input
 OUTPUT_DIR=/output
@@ -49,10 +49,9 @@ POLL_INTERVAL=5
 LOG_LEVEL=$log_level
 EOF
 
-# ----------- 4. 生成 docker-compose.yml（强制覆盖） -----------
-# ----------- 生成 docker-compose.yml（强制覆盖，变量已展开） -----------
-# ----------- 生成 docker-compose.yml（强制覆盖，变量已展开） -----------
-cat > docker-compose.yml <<-"EOF"
+# ----------- 4. 生成 docker-compose.yml（变量已展开） -----------
+# 注意定界符用双引号，Shell 会先展开所有 ${} 再写文件
+cat > docker-compose.yml <<EOF
 version: '3.8'
 services:
   gpg-encryptor:
@@ -72,6 +71,7 @@ services:
       - POLL_INTERVAL=5
       - LOG_LEVEL=${log_level}
 EOF
+
 # ----------- 5. 可选 GPG 密钥导出 -----------
 if command -v gpg &>/dev/null; then
     mapfile -t keys < <(gpg --list-secret-keys --with-colons 2>/dev/null | awk -F: '$1=="sec"{print $5}')
