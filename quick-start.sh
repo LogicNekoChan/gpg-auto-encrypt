@@ -49,9 +49,11 @@ POLL_INTERVAL=5
 LOG_LEVEL=$log_level
 EOF
 
-# ----------- 4. 提前创建 gpg-keys 并放宽权限 -----------
+# ----------- 4. 提前创建 gpg-keys 并设置属主与权限 -----------
 mkdir -p gpg-keys
-chmod 777 gpg-keys
+# 容器内用户默认 1000:1000，如不同请 docker exec id 查看后修改
+sudo chown -R 1000:1000 ./gpg-keys
+chmod 700 ./gpg-keys
 
 # ----------- 5. 生成 docker-compose.yml（变量已展开） -----------
 cat > docker-compose.yml <<EOF
