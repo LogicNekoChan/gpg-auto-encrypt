@@ -1,0 +1,24 @@
+version: '3.8'
+
+services:
+  gpg-encryptor:
+    build: .
+    container_name: gpg-auto-encryptor
+    volumes:
+      - ./input:/input:rw          # 输入目录
+      - ./output:/output:rw        # 输出目录
+      - ./gpg-keys:/app/gpg-keys:rw # GPG密钥存储
+      - ./logs:/app/logs:rw        # 日志目录
+    environment:
+      - INPUT_DIR=/input
+      - OUTPUT_DIR=/output
+      - GPG_RECIPIENT=${GPG_RECIPIENT:-}  # 从环境变量读取收件人
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - DELETE_AFTER_ENCRYPT=true
+      - POLL_INTERVAL=5
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; os.path.exists('/app/app.pid')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
