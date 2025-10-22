@@ -6,8 +6,10 @@ echo "🚀 启动 GPG 自动加密服务..."
 # 创建必要目录
 mkdir -p /app/logs /app/gpg-keys /input /output
 
-# 设置 GPG 目录权限
-chmod 700 /app/gpg-keys
+# 设置 GPG 目录权限（可写就跳过，避免非 root + bind mount 失败）
+if [[ ! -w /app/gpg-keys ]]; then
+    chmod 700 /app/gpg-keys 2>/dev/null || true
+fi
 
 # 检查必需环境变量
 if [ -z "$GPG_RECIPIENT" ]; then
