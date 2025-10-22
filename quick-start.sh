@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -eu
 
-# ----------- 同时兼容 docker-compose / docker compose -----------
+# ----------- 兼容 docker-compose / docker compose -----------
 compose_cmd(){
     if docker compose version &>/dev/null; then
         echo "docker compose"
@@ -39,7 +39,28 @@ host_output=${host_output:-/data/gpg-output}
 
 mkdir -p "$host_input" "$host_output"
 
-# ----------- 3. 生成 .env -----------
+# ----------- 3. 直接把本机公钥装甲导出到变量 -----------
+GPG_PUB_KEY=""
+if command -v gpg &>/dev/null; then
+    mapfile -t keys < <(gpg --list-public-keys --with-colons | awk -F: '$1=="pub"{print $5}')
+    if [[ ${#keys[@]} -gt 0 ]]; then
+        echo "Found local GPG public keys:"
+        for i in "${!keys[@]}"; do
+            echo "  $((i+1))) ${keys[i]}"
+        done
+        read -rp "Select public key to use for encryption (1-${#keys[@]}): " idx
+        key_id="${keys[$((idx-1))]}"
+        # 导出公钥装甲（不含私钥）
+        GPG_PUB_KEY=$(gpg --armor --export "$key_id")
+        echo "✅ 公钥已提取到环境变量"
+    else
+        echo "No local GPG public keys; you can paste ASCII-armored key later or place *.key files"
+    fi
+else
+    echo "GPG not installed; you can paste ASCII-armored key later or place *.key files"
+fi
+
+# ----------- 4. 生成 .env（含整段公钥） -----------
 cat > .env <<EOF
 GPG_RECIPIENT=$gpg_recipient
 INPUT_DIR=/input
@@ -47,37 +68,11 @@ OUTPUT_DIR=/output
 DELETE_AFTER_ENCRYPT=true
 POLL_INTERVAL=5
 LOG_LEVEL=$log_level
+# 整段公钥装甲（无换行问题）
+GPG_PUB_KEY=$GPG_PUB_KEY
 EOF
 
-# ----------- 4. 创建 gpg-keys 并强制设为容器用户(1000:1000) -----------
-mkdir -p gpg-keys
-# 如果容器内 UID/GID 不是 1000，请改为实际值
-sudo chown -R 1000:1000 ./gpg-keys
-chmod 700 ./gpg-keys
-
-# ----------- 5. 可选 GPG 密钥导出（确保文件属主也是 1000） -----------
-if command -v gpg &>/dev/null; then
-    mapfile -t keys < <(gpg --list-secret-keys --with-colons 2>/dev/null | awk -F: '$1=="sec"{print $5}')
-    if [[ ${#keys[@]} -gt 0 ]]; then
-        echo "Found local GPG secret keys:"
-        for i in "${!keys[@]}"; do
-            echo "  $((i+1))) ${keys[i]}"
-        done
-        read -rp "Select key number to export (1-${#keys[@]}): " idx
-        key_id="${keys[$((idx-1))]}"
-        gpg --armor --export "$key_id"       > gpg-keys/public.key
-        gpg --armor --export-secret-keys "$key_id" > gpg-keys/private.key
-        sudo chown 1000:1000 gpg-keys/*.key
-        chmod 600 gpg-keys/*.key
-        echo "Keys exported to gpg-keys/"
-    else
-        echo "No local GPG keys found; place *.key files into gpg-keys/ manually"
-    fi
-else
-    echo "GPG not installed; place *.key files into gpg-keys/ manually"
-fi
-
-# ----------- 6. 生成 docker-compose.yml（变量已展开） -----------
+# ----------- 5. 生成 docker-compose.yml（变量已展开） -----------
 cat > docker-compose.yml <<EOF
 version: '3.8'
 services:
@@ -88,7 +83,6 @@ services:
     volumes:
       - ${host_input}:/input
       - ${host_output}:/output
-      - ./gpg-keys:/app/gpg-keys:rw
       - ./logs:/app/logs:rw
     environment:
       - GPG_RECIPIENT=${gpg_recipient}
@@ -97,9 +91,10 @@ services:
       - DELETE_AFTER_ENCRYPT=true
       - POLL_INTERVAL=5
       - LOG_LEVEL=${log_level}
+      - GPG_PUB_KEY=${GPG_PUB_KEY}
 EOF
 
-# ----------- 7. 启动服务 -----------
+# ----------- 6. 启动服务 -----------
 echo "Starting container..."
 $COMPOSE up -d --build
 
