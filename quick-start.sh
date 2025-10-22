@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -eu
 
-# ----------- 兼容 docker-compose / docker compose -----------
+# ----------- 同时兼容 docker-compose / docker compose -----------
 compose_cmd(){
     if docker compose version &>/dev/null; then
         echo "docker compose"
@@ -39,7 +39,7 @@ host_output=${host_output:-/data/gpg-output}
 
 mkdir -p "$host_input" "$host_output"
 
-# ----------- 3. 直接把本机公钥装甲导出到变量 -----------
+# ----------- 3. 直接把本机公钥装甲导出到变量（去换行） -----------
 GPG_PUB_KEY=""
 if command -v gpg &>/dev/null; then
     mapfile -t keys < <(gpg --list-public-keys --with-colons | awk -F: '$1=="pub"{print $5}')
@@ -50,9 +50,9 @@ if command -v gpg &>/dev/null; then
         done
         read -rp "Select public key to use for encryption (1-${#keys[@]}): " idx
         key_id="${keys[$((idx-1))]}"
-        # 导出公钥装甲（不含私钥）
-        GPG_PUB_KEY=$(gpg --armor --export "$key_id")
-        echo "✅ 公钥已提取到环境变量"
+        # 去换行：折叠成单行
+        GPG_PUB_KEY=$(gpg --armor --export "$key_id" | tr -d '\n')
+        echo "✅ 公钥已提取到环境变量（去换行）"
     else
         echo "No local GPG public keys; you can paste ASCII-armored key later or place *.key files"
     fi
@@ -60,7 +60,7 @@ else
     echo "GPG not installed; you can paste ASCII-armored key later or place *.key files"
 fi
 
-# ----------- 4. 生成 .env（含整段公钥） -----------
+# ----------- 4. 生成 .env（含去换行公钥） -----------
 cat > .env <<EOF
 GPG_RECIPIENT=$gpg_recipient
 INPUT_DIR=/input
@@ -68,7 +68,7 @@ OUTPUT_DIR=/output
 DELETE_AFTER_ENCRYPT=true
 POLL_INTERVAL=5
 LOG_LEVEL=$log_level
-# 整段公钥装甲（无换行问题）
+# 去换行公钥装甲
 GPG_PUB_KEY=$GPG_PUB_KEY
 EOF
 
