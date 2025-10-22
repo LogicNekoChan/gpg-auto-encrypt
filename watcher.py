@@ -25,12 +25,9 @@ class DirectoryWatcher:
             recursive=True
         )
         self.observer.start()
-
-        # 处理已存在的文件
         self.process_existing_files()
 
     def stop(self):
-        """停止监控"""
         if self.observer:
             self.observer.stop()
             self.observer.join()
@@ -40,7 +37,6 @@ class DirectoryWatcher:
         """服务启动时处理已存在的文件"""
         self.logger.info("检查已存在的文件...")
         input_path = Path(self.config.input_dir)
-
         for item in input_path.rglob('*'):
             if item.is_file() and not item.name.startswith('.'):
                 self.process_item(item)
@@ -72,34 +68,52 @@ class EncryptEventHandler(FileSystemEventHandler):
         self.encryptor = encryptor
         self.logger = logging.getLogger(__name__)
 
+    # ---------- 稳定期工具 ----------
+    @staticmethod
+    def wait_until_stable(path: Path, stable_sec: int = 3, check_interval: int = 1):
+        """文件大小连续 stable_sec 秒不变才返回"""
+        last_size = -1
+        stable_since = None
+        while True:
+            try:
+                current_size = path.stat().st_size
+            except FileNotFoundError:
+                return False
+            if current_size == last_size:
+                if stable_since and (time.time() - stable_since) >= stable_sec:
+                    return True
+            else:
+                stable_since = time.time()
+                last_size = current_size
+            time.sleep(check_interval)
+
+    # ---------- 事件回调 ----------
     def on_created(self, event):
-        """文件或目录创建事件"""
         if not event.is_directory:
             self.logger.info(f"检测到新文件: {event.src_path}")
-            time.sleep(1)  # 等待文件写入完成
             self.process_item(Path(event.src_path))
 
     def on_modified(self, event):
-        """文件修改事件"""
         if not event.is_directory:
             self.logger.info(f"检测到文件修改: {event.src_path}")
             self.process_item(Path(event.src_path))
 
+    # ---------- 真正处理 ----------
     def process_item(self, item_path: Path):
-        """处理单个文件"""
         try:
-            # 跳过隐藏文件、临时文件、加密文件
-            if item_path.name.startswith('.') or item_path.name.endswith('~') or item_path.suffix == '.gpg':
+            # 跳过隐藏、临时、已加密
+            if item_path.name.startswith('.') or item_path.name.endswith(('~', '.tmp', '.filepart', '.gpg')):
                 return
 
-            # 等待文件完全写入（防止大文件）
-            time.sleep(2)
+            # 等大文件写完
+            if not self.wait_until_stable(item_path, stable_sec=3):
+                self.logger.warning(f"文件未稳定或已被删除：{item_path}")
+                return
 
             relative_path = item_path.relative_to(self.config.input_dir)
             output_path = Path(self.config.output_dir) / relative_path.parent
 
             success = self.encryptor.encrypt_file(item_path, output_path)
-
             if success and self.config.delete_after_encrypt:
                 self.encryptor.delete_original(item_path)
 
