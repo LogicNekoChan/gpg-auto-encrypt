@@ -77,8 +77,7 @@ sudo chown -R 1000:1000 ./logs
 chmod 755 ./logs
 
 # ----------- 6. 生成 docker-compose.yml（变量已展开） -----------
-# ----------- 生成 docker-compose.yml（强制覆盖，变量已展开） -----------
-cat > docker-compose.yml <<-"EOF"
+cat > docker-compose.yml <<EOF
 version: '3.8'
 services:
   gpg-encryptor:
@@ -91,14 +90,13 @@ services:
       - ./logs:/app/logs:rw
       - ./gpg-pub.asc:/app/gpg-pub.asc:ro
     environment:
-      - GPG_RECIPIENT=${gpg_recipient}
+      - GPG_RECIPIENT=$gpg_recipient
       - INPUT_DIR=/input
       - OUTPUT_DIR=/output
       - DELETE_AFTER_ENCRYPT=true
       - POLL_INTERVAL=5
-      - LOG_LEVEL=${log_level}
+      - LOG_LEVEL=$log_level
 EOF
-
 # ----------- 7. 启动服务 -----------
 echo "Starting container..."
 $COMPOSE up -d --build
