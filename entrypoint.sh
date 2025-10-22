@@ -28,6 +28,13 @@ if [ -f "/app/gpg-keys/private.key" ]; then
     gpg --batch --import /app/gpg-keys/private.key
 fi
 
+# 若环境变量里有单行公钥，先还原换行再导入
+if [[ -n "${GPG_PUB_KEY:-}" ]]; then
+    echo "🔑 导入环境变量公钥..."
+    # 每64字符换行（gpg 标准折叠）
+    printf '%s\n' "$GPG_PUB_KEY" | fold -w 64 | gpg --batch --import
+fi
+
 # 信任密钥（如果存在）
 if [ -n "$GPG_RECIPIENT" ]; then
     echo "✅ 信任密钥 $GPG_RECIPIENT..."
