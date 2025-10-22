@@ -49,8 +49,11 @@ POLL_INTERVAL=5
 LOG_LEVEL=$log_level
 EOF
 
-# ----------- 4. 生成 docker-compose.yml（变量已展开） -----------
-# 注意定界符用双引号，Shell 会先展开所有 ${} 再写文件
+# ----------- 4. 提前创建 gpg-keys 并放宽权限 -----------
+mkdir -p gpg-keys
+chmod 777 gpg-keys
+
+# ----------- 5. 生成 docker-compose.yml（变量已展开） -----------
 cat > docker-compose.yml <<EOF
 version: '3.8'
 services:
@@ -72,7 +75,7 @@ services:
       - LOG_LEVEL=${log_level}
 EOF
 
-# ----------- 5. 可选 GPG 密钥导出 -----------
+# ----------- 6. 可选 GPG 密钥导出 -----------
 if command -v gpg &>/dev/null; then
     mapfile -t keys < <(gpg --list-secret-keys --with-colons 2>/dev/null | awk -F: '$1=="sec"{print $5}')
     if [[ ${#keys[@]} -gt 0 ]]; then
@@ -82,7 +85,6 @@ if command -v gpg &>/dev/null; then
         done
         read -rp "Select key number to export (1-${#keys[@]}): " idx
         key_id="${keys[$((idx-1))]}"
-        mkdir -p gpg-keys
         gpg --armor --export "$key_id"       > gpg-keys/public.key
         gpg --armor --export-secret-keys "$key_id" > gpg-keys/private.key
         chmod 600 gpg-keys/*.key
@@ -94,7 +96,7 @@ else
     echo "GPG not installed; place *.key files into gpg-keys/ manually"
 fi
 
-# ----------- 6. 启动服务 -----------
+# ----------- 7. 启动服务 -----------
 echo "Starting container..."
 $COMPOSE up -d --build
 
