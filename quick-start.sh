@@ -36,14 +36,26 @@ POLL_INTERVAL=5
 LOG_LEVEL=$log_level
 EOF
 
-# ----------- 生成 docker-compose.override.yml -----------
-cat > docker-compose.override.yml <<EOF
+# ----------- 生成 docker-compose.yml（强制覆盖） -----------
+cat > docker-compose.yml <<EOF
 version: '3.8'
 services:
   gpg-encryptor:
+    build: .
+    container_name: gpg-encryptor
+    restart: unless-stopped
     volumes:
       - ${host_input}:/input
       - ${host_output}:/output
+      - ./gpg-keys:/app/gpg-keys:rw
+      - ./logs:/app/logs:rw
+    environment:
+      - GPG_RECIPIENT=\${GPG_RECIPIENT}
+      - INPUT_DIR=/input
+      - OUTPUT_DIR=/output
+      - DELETE_AFTER_ENCRYPT=true
+      - POLL_INTERVAL=5
+      - LOG_LEVEL=\${LOG_LEVEL}
 EOF
 
 # ----------- 本机 GPG 密钥检测与导出 -----------
@@ -67,14 +79,6 @@ if command -v gpg &>/dev/null; then
     fi
 else
     echo "⚠️  本机未安装 GPG，请手动将 *.key 文件放入 gpg-keys/ 目录"
-fi
-
-# ----------- 检测 YAML 生成成功 -----------
-if [[ -f docker-compose.override.yml && -f .env ]]; then
-    echo "✅ 配置文件生成成功"
-else
-    echo "❌ 配置文件生成失败"
-    exit 1
 fi
 
 # ----------- 启动服务 -----------
